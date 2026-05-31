@@ -1,3 +1,5 @@
+import { toWindowsRating, toWindowsTags } from "./ffmetadata";
+
 /** Full metadata model (form + MP4 tags + JSON import/export). */
 export type VideoMetadata = {
   title: string;
@@ -244,10 +246,11 @@ export function metadataHasContent(meta: VideoMetadata): boolean {
   return Object.values(meta).some((v) => v.trim().length > 0);
 }
 
-/** FFmpeg `-metadata key=value` argument pairs */
+/** Extra `-metadata` flags for remux pass (backup to ffmetadata file). */
 export function toFfmpegMetadataArgs(meta: VideoMetadata): string[] {
   const args: string[] = [];
-  const keywordBlob = [meta.keywords, meta.tags].filter((s) => clean(s)).join(", ");
+  const tags = toWindowsTags(meta);
+  const rating = toWindowsRating(meta.rating);
   const description = [meta.title, meta.subtitle, meta.comments]
     .filter((s) => clean(s))
     .join(" — ");
@@ -263,13 +266,12 @@ export function toFfmpegMetadataArgs(meta: VideoMetadata): string[] {
     ["copyright", meta.copyright],
     ["genre", meta.category],
     ["subject", meta.subject],
-    ["keywords", keywordBlob],
+    ["keywords", tags],
     ["language", meta.language],
-    ["rating", meta.rating],
+    ["rating", rating],
     ["website", meta.source],
     ["encoded_by", meta.company],
     ["composer", meta.manager],
-    ["content_status", meta.contentStatus],
   ];
 
   for (const [key, value] of map) {

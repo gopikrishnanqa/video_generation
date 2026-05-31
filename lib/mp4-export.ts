@@ -1,8 +1,8 @@
+import { encodeFfmetadataUtf8 } from "./ffmetadata";
 import { toFfmpegMetadataArgs, type VideoMetadata } from "./video-metadata";
 
 const ENCODE_TIMEOUT_MS = 3 * 60 * 1000;
 
-/** Same-origin paths (see public/vendor/ffmpeg/) — avoids Next.js chunk load failures */
 const FFMPEG_JS = "/vendor/ffmpeg/ffmpeg.js";
 const CORE_JS = "/vendor/ffmpeg/ffmpeg-core.js";
 const CORE_WASM = "/vendor/ffmpeg/ffmpeg-core.wasm";
@@ -154,13 +154,27 @@ function withTimeout<T>(
   });
 }
 
+async function safeDelete(ffmpeg: FFmpegInstance, name: string) {
+  try {
+    await ffmpeg.deleteFile(name);
+  } catch {
+    /* ignore */
+  }
+}
+
 export type Mp4ExportOptions = {
   metadata: VideoMetadata;
   onProgress?: (pct: number) => void;
   onStatus?: (msg: string) => void;
 };
 
-/** Convert WebM blob to H.264 MP4 with embedded metadata tags. */
+/**
+ * Convert WebM → MP4 with metadata embedded for Windows Properties
+ * (Title, Subtitle, Rating, Tags, Comments).
+ *
+ * Pass 1: encode video/audio
+ * Pass 2: remux with ffmetadata sidecar (reliable for Explorer Details tab)
+ */
 export async function convertWebmToMp4(
   webmBlob: Blob,
   options: Mp4ExportOptions
@@ -174,28 +188,22 @@ export async function convertWebmToMp4(
 
   const progressHandler = (e: FfmpegProgressEvent | FfmpegLogEvent) => {
     if (!("progress" in e)) return;
-    const pct = Math.min(99, Math.round(20 + e.progress * 75));
+    const pct = Math.min(99, Math.round(15 + e.progress * 80));
     onProgress?.(pct);
     onStatus?.(`Encoding MP4… ${pct}%`);
   };
   ffmpeg.on("progress", progressHandler);
 
   try {
-    onProgress?.(12);
-    onStatus?.("Preparing conversion…");
+    onProgress?.(10);
+    onStatus?.("Rendering MP4 video…");
 
     await ffmpeg.writeFile("input.webm", await blobToUint8Array(webmBlob));
-
-    const metaArgs = toFfmpegMetadataArgs(metadata);
-
-    onProgress?.(18);
-    onStatus?.("Encoding MP4 (H.264 + AAC)…");
 
     await withTimeout(
       ffmpeg.exec([
         "-i",
         "input.webm",
-        ...metaArgs,
         "-c:v",
         "libx264",
         "-preset",
@@ -211,10 +219,39 @@ export async function convertWebmToMp4(
         "-movflags",
         "+faststart",
         "-y",
-        "output.mp4",
+        "temp.mp4",
       ]),
       ENCODE_TIMEOUT_MS,
       "MP4 encoding timed out after 3 minutes. Try again."
+    );
+
+    onProgress?.(55);
+    onStatus?.("Writing metadata into MP4 (Windows Properties)…");
+
+    await ffmpeg.writeFile("meta.ffmeta", encodeFfmetadataUtf8(metadata));
+
+    const metaArgs = toFfmpegMetadataArgs(metadata);
+
+    await withTimeout(
+      ffmpeg.exec([
+        "-i",
+        "temp.mp4",
+        "-i",
+        "meta.ffmeta",
+        "-map",
+        "0",
+        "-map_metadata",
+        "1",
+        "-c",
+        "copy",
+        ...metaArgs,
+        "-movflags",
+        "+faststart+use_metadata_tags",
+        "-y",
+        "output.mp4",
+      ]),
+      ENCODE_TIMEOUT_MS,
+      "MP4 metadata pass timed out. Try again."
     );
 
     onProgress?.(98);
@@ -225,7 +262,7 @@ export async function convertWebmToMp4(
     }
 
     onProgress?.(100);
-    onStatus?.("MP4 ready");
+    onStatus?.("MP4 ready with embedded metadata");
 
     const copy = new Uint8Array(data.length);
     copy.set(data);
@@ -235,11 +272,9 @@ export async function convertWebmToMp4(
     throw e;
   } finally {
     ffmpeg.off("progress", progressHandler);
-    try {
-      await ffmpeg.deleteFile("input.webm");
-      await ffmpeg.deleteFile("output.mp4");
-    } catch {
-      /* ignore cleanup errors */
-    }
+    await safeDelete(ffmpeg, "input.webm");
+    await safeDelete(ffmpeg, "temp.mp4");
+    await safeDelete(ffmpeg, "meta.ffmeta");
+    await safeDelete(ffmpeg, "output.mp4");
   }
 }

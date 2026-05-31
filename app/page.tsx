@@ -318,9 +318,10 @@ export default function Home() {
             Media metadata (tagger)
           </h2>
           <p style={styles.muted}>
-            Paste metadata JSON (PascalCase). Only fields present in the JSON
-            with values are applied; missing keys keep current values. Embedded
-            into the MP4 on export.
+            Paste metadata JSON (PascalCase), then Apply JSON. Tags are written
+            into the MP4 file itself (Windows Properties → Details: Title,
+            Subtitle, Rating, Tags, Comments). Missing JSON keys are not
+            changed.
           </p>
           <MetadataForm metadata={metadata} onChange={setMetadata} />
 
