@@ -11,10 +11,14 @@ import {
   type Section,
 } from "./section-detector";
 
+export type IntroStyle = "blue" | "blur";
+
 export type GenerateOptions = {
   fps?: number;
   width?: number;
   height?: number;
+  /** Blue wash over poster, or heavy blur with little color tint */
+  introStyle?: IntroStyle;
   blueIntroSeconds?: number;
   sectionRevealSeconds?: number;
   holdFullSeconds?: number;
@@ -109,6 +113,7 @@ function drawBlueOverlay(
   ctx.fillRect(0, 0, w, h);
 }
 
+/** Blue color wash — poster faint under strong blue overlay */
 function drawBlueIntro(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
@@ -117,17 +122,59 @@ function drawBlueIntro(
   layout: ImageLayout,
   progress: number
 ) {
+  const t = easeOutCubic(progress);
   ctx.fillStyle = "#060d18";
   ctx.fillRect(0, 0, cw, ch);
 
-  const blurPx = 14 * (1 - easeOutCubic(progress));
+  const blurPx = 6 * (1 - t);
   ctx.save();
   ctx.filter = blurPx > 0.5 ? `blur(${blurPx}px)` : "none";
-  ctx.globalAlpha = 0.35 + progress * 0.35;
+  ctx.globalAlpha = 0.22 + t * 0.28;
   drawFullImage(ctx, img, layout);
   ctx.restore();
 
-  drawBlueOverlay(ctx, cw, ch, 0.88 - progress * 0.2);
+  drawBlueOverlay(ctx, cw, ch, 0.92 - t * 0.25);
+}
+
+/** Blur focus — poster visible but heavily blurred, minimal blue tint */
+function drawBlurIntro(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cw: number,
+  ch: number,
+  layout: ImageLayout,
+  progress: number
+) {
+  const t = easeOutCubic(progress);
+  ctx.fillStyle = "#060d18";
+  ctx.fillRect(0, 0, cw, ch);
+
+  const blurPx = 22 * (1 - t);
+  ctx.save();
+  ctx.filter = blurPx > 0.5 ? `blur(${blurPx}px)` : "none";
+  ctx.globalAlpha = 0.45 + t * 0.45;
+  drawFullImage(ctx, img, layout);
+  ctx.restore();
+
+  if (t < 0.85) {
+    drawBlueOverlay(ctx, cw, ch, 0.12 * (1 - t));
+  }
+}
+
+function drawIntro(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cw: number,
+  ch: number,
+  layout: ImageLayout,
+  progress: number,
+  style: IntroStyle
+) {
+  if (style === "blur") {
+    drawBlurIntro(ctx, img, cw, ch, layout, progress);
+  } else {
+    drawBlueIntro(ctx, img, cw, ch, layout, progress);
+  }
 }
 
 function drawSectionReveal(
@@ -359,6 +406,7 @@ export async function generatePosterVideo(
   const fps = options.fps ?? 30;
   const outW = options.width ?? 1080;
   const outH = options.height ?? 1920;
+  const introStyle: IntroStyle = options.introStyle ?? "blue";
   const blueIntro = Math.max(0.3, options.blueIntroSeconds ?? 1.5);
   const sectionReveal = Math.max(0.2, options.sectionRevealSeconds ?? 0.6);
   const holdFull = Math.max(0, options.holdFullSeconds ?? 1);
@@ -457,13 +505,14 @@ export async function generatePosterVideo(
 
   for (let frame = 0; frame < totalFrames; frame++) {
     if (frame < introFrames) {
-      drawBlueIntro(
+      drawIntro(
         ctx,
         img,
         outW,
         outH,
         layout,
-        frame / introFrames
+        frame / introFrames,
+        introStyle
       );
     } else if (frame < introFrames + sections.length * sectionFrames) {
       const local = frame - introFrames;

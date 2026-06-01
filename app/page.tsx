@@ -13,7 +13,10 @@ import {
   revokeIfBlobUrl,
 } from "@/lib/download-utils";
 import { convertWebmToMp4 } from "@/lib/mp4-export";
-import { generatePosterVideo } from "@/lib/video-generator";
+import {
+  generatePosterVideo,
+  type IntroStyle,
+} from "@/lib/video-generator";
 import {
   applyMetadataJson,
   DEFAULT_VIDEO_METADATA,
@@ -24,6 +27,7 @@ import {
 } from "@/lib/video-metadata";
 
 type TimingState = {
+  introStyle: IntroStyle;
   blueIntroSeconds: number;
   sectionRevealSeconds: number;
   holdFullSeconds: number;
@@ -33,6 +37,7 @@ type TimingState = {
 };
 
 const DEFAULT_TIMING: TimingState = {
+  introStyle: "blue",
   blueIntroSeconds: 1.5,
   sectionRevealSeconds: 0.55,
   holdFullSeconds: 1.2,
@@ -125,6 +130,7 @@ export default function Home() {
 
     try {
       const result = await generatePosterVideo(source, {
+        introStyle: timing.introStyle,
         blueIntroSeconds: timing.blueIntroSeconds,
         sectionRevealSeconds: timing.sectionRevealSeconds,
         holdFullSeconds: timing.holdFullSeconds,
@@ -213,7 +219,8 @@ export default function Home() {
       <header style={styles.header}>
         <h1 style={styles.h1}>Poster Video Generator</h1>
         <p style={styles.sub}>
-          Blue intro → sections wipe in → hold with mild pendulum → scatter.
+          Intro (blue or blur) → sections wipe in → hold with mild pendulum →
+          scatter.
           Optional background music from the media library.
         </p>
       </header>
@@ -327,8 +334,24 @@ export default function Home() {
 
           <h2 style={{ ...styles.h2, marginTop: "1.25rem" }}>Timing (seconds)</h2>
           <div style={styles.timingGrid}>
+            <label style={styles.fieldLabel}>
+              Intro style
+              <select
+                value={timing.introStyle}
+                onChange={(e) =>
+                  setTiming((t) => ({
+                    ...t,
+                    introStyle: e.target.value as IntroStyle,
+                  }))
+                }
+                style={styles.select}
+              >
+                <option value="blue">Blue — color wash over poster</option>
+                <option value="blur">Blur — heavy blur, little blue tint</option>
+              </select>
+            </label>
             <TimingField
-              label="Blue intro"
+              label="Intro duration"
               value={timing.blueIntroSeconds}
               min={0.3}
               max={10}
