@@ -164,6 +164,8 @@ async function safeDelete(ffmpeg: FFmpegInstance, name: string) {
 
 export type Mp4ExportOptions = {
   metadata: VideoMetadata;
+  /** Force final MP4 duration to generated animation length (seconds). */
+  durationSeconds?: number;
   onProgress?: (pct: number) => void;
   onStatus?: (msg: string) => void;
 };
@@ -179,7 +181,11 @@ export async function convertWebmToMp4(
   webmBlob: Blob,
   options: Mp4ExportOptions
 ): Promise<Blob> {
-  const { metadata, onProgress, onStatus } = options;
+  const { metadata, durationSeconds, onProgress, onStatus } = options;
+  const trimSeconds =
+    typeof durationSeconds === "number" && durationSeconds > 0
+      ? durationSeconds.toFixed(3)
+      : null;
 
   onStatus?.("Loading video encoder (first time may take a minute)…");
   onProgress?.(5);
@@ -204,6 +210,8 @@ export async function convertWebmToMp4(
       ffmpeg.exec([
         "-i",
         "input.webm",
+        ...(trimSeconds ? ["-t", trimSeconds] : []),
+        "-shortest",
         "-c:v",
         "libx264",
         "-preset",
@@ -242,6 +250,7 @@ export async function convertWebmToMp4(
         "0",
         "-map_metadata",
         "1",
+        ...(trimSeconds ? ["-t", trimSeconds] : []),
         "-c",
         "copy",
         ...metaArgs,

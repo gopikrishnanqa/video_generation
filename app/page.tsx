@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MUSIC_MP3,
   MUSIC_TRACKS,
@@ -32,6 +32,7 @@ type TimingState = {
   sectionRevealSeconds: number;
   holdFullSeconds: number;
   scatterSeconds: number;
+  endCardSeconds: number;
   holdShakeIntensity: number;
   sectionCount: "auto" | number;
 };
@@ -39,12 +40,22 @@ type TimingState = {
 const DEFAULT_TIMING: TimingState = {
   introStyle: "blue",
   blueIntroSeconds: 1.5,
-  sectionRevealSeconds: 0.55,
-  holdFullSeconds: 1.2,
+  sectionRevealSeconds: 0.3,
+  holdFullSeconds: 6,
   scatterSeconds: 2,
+  endCardSeconds: 0,
   holdShakeIntensity: 1,
   sectionCount: "auto",
 };
+
+type EndCardItem = {
+  id: string;
+  name: string;
+  src: string;
+};
+
+const DEFAULT_RANDOM_MUSIC_ID =
+  MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)]?.id ?? "";
 
 export default function Home() {
   const [selectedSample, setSelectedSample] = useState<string | null>(
@@ -55,8 +66,13 @@ export default function Home() {
     POSTER_SAMPLES[0].src
   );
   const [timing, setTiming] = useState(DEFAULT_TIMING);
-  const [selectedMusicId, setSelectedMusicId] = useState<string>("");
+  const [selectedMusicId, setSelectedMusicId] = useState<string>(
+    DEFAULT_RANDOM_MUSIC_ID
+  );
+  const [endCardItems, setEndCardItems] = useState<EndCardItem[]>([]);
+  const [selectedEndCardSrc, setSelectedEndCardSrc] = useState<string>("");
   const [musicVolume, setMusicVolume] = useState(0.85);
+  const [skipPrecheckPopup, setSkipPrecheckPopup] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [progress, setProgress] = useState(0);
   const [metadata, setMetadata] = useState<VideoMetadata>(DEFAULT_VIDEO_METADATA);
@@ -75,6 +91,23 @@ export default function Home() {
     [selectedMusicId]
   );
 
+  useEffect(() => {
+    let active = true;
+    fetch("/api/media/end-cards")
+      .then((r) => r.json())
+      .then((data: { items?: EndCardItem[] }) => {
+        if (!active) return;
+        const items = Array.isArray(data.items) ? data.items : [];
+        setEndCardItems(items);
+      })
+      .catch(() => {
+        if (active) setEndCardItems([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const estimatedDuration = useMemo(() => {
     const sections =
       timing.sectionCount === "auto" ? 10 : Number(timing.sectionCount);
@@ -82,9 +115,10 @@ export default function Home() {
       timing.blueIntroSeconds +
       sections * timing.sectionRevealSeconds +
       timing.holdFullSeconds +
-      timing.scatterSeconds
+      timing.scatterSeconds +
+      (selectedEndCardSrc ? timing.endCardSeconds : 0)
     ).toFixed(1);
-  }, [timing]);
+  }, [timing, selectedEndCardSrc]);
 
   const setPreview = useCallback((url: string) => {
     setPreviewUrl(url);
@@ -116,6 +150,20 @@ export default function Home() {
       return;
     }
 
+    if (!skipPrecheckPopup) {
+      const missing: string[] = [];
+      if (!selectedMusic?.src) missing.push("music track");
+      if (!selectedEndCardSrc) missing.push("end card image");
+      if (missing.length > 0) {
+        window.alert(
+          `Please select ${missing.join(
+            " and "
+          )} before generating MP4.\n\nTick 'Skip pre-check popups' near Generate MP4 if you want to continue without this warning.`
+        );
+        return;
+      }
+    }
+
     revokeIfBlobUrl(mp4Revoke.current);
     mp4Revoke.current = null;
     setMp4Url(null);
@@ -135,6 +183,8 @@ export default function Home() {
         sectionRevealSeconds: timing.sectionRevealSeconds,
         holdFullSeconds: timing.holdFullSeconds,
         scatterSeconds: timing.scatterSeconds,
+        endCardSrc: selectedEndCardSrc || null,
+        endCardSeconds: selectedEndCardSrc ? timing.endCardSeconds : 0,
         holdShakeIntensity: timing.holdShakeIntensity,
         sectionCount: timing.sectionCount,
         musicSrc: selectedMusic?.src ?? null,
@@ -176,6 +226,7 @@ export default function Home() {
     setStatus("Encoding MP4 with metadata…");
     const mp4Blob = await convertWebmToMp4(webmBlob, {
       metadata,
+      durationSeconds,
       onProgress: (pct) => setProgress(65 + Math.round(pct * 0.35)),
       onStatus: setStatus,
     });
@@ -416,6 +467,31 @@ export default function Home() {
                 setTiming((t) => ({ ...t, scatterSeconds: v }))
               }
             />
+            <label style={styles.fieldLabel}>
+              End card image (after scatter)
+              <select
+                value={selectedEndCardSrc}
+                onChange={(e) => setSelectedEndCardSrc(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">None</option>
+                {endCardItems.map((item) => (
+                  <option key={item.id} value={item.src}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <TimingField
+              label="End card duration"
+              value={timing.endCardSeconds}
+              min={0}
+              max={15}
+              step={0.1}
+              onChange={(v) =>
+                setTiming((t) => ({ ...t, endCardSeconds: v }))
+              }
+            />
           </div>
 
           <label style={styles.fieldLabel}>
@@ -446,6 +522,7 @@ export default function Home() {
 
           <p style={styles.estimate}>
             Estimated length: ~{estimatedDuration}s (auto uses ~10 sections)
+            {selectedEndCardSrc ? " + end card" : ""}
           </p>
 
           <button
@@ -460,6 +537,14 @@ export default function Home() {
           >
             {busy ? `Generating MP4… ${progress}%` : "Generate MP4"}
           </button>
+          <label style={styles.inlineCheck}>
+            <input
+              type="checkbox"
+              checked={skipPrecheckPopup}
+              onChange={(e) => setSkipPrecheckPopup(e.target.checked)}
+            />
+            Skip pre-check popups (music/end card)
+          </label>
           {status && <p style={styles.status}>{status}</p>}
         </div>
 
@@ -850,6 +935,14 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--accent)",
     border: "none",
     borderRadius: 8,
+  },
+  inlineCheck: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.45rem",
+    marginTop: "0.65rem",
+    fontSize: "0.85rem",
+    color: "var(--muted)",
   },
   status: { marginTop: "0.75rem", fontSize: "0.9rem", color: "var(--muted)" },
   video: {

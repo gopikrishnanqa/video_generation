@@ -23,6 +23,9 @@ export type GenerateOptions = {
   sectionRevealSeconds?: number;
   holdFullSeconds?: number;
   scatterSeconds?: number;
+  /** Optional image shown after scatter outro. */
+  endCardSrc?: string | null;
+  endCardSeconds?: number;
   sectionCount?: number | "auto";
   /** 0 = off, 1 = mild pendulum (default), up to 1.5 for slightly more sway */
   holdShakeIntensity?: number;
@@ -382,6 +385,23 @@ function drawScatter(
   }
 }
 
+function drawEndCard(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cw: number,
+  ch: number,
+  progress: number
+) {
+  const layout = computeImageLayout(img.naturalWidth, img.naturalHeight, cw, ch);
+  const t = easeOutCubic(progress);
+  ctx.fillStyle = "#060d18";
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, 0.2 + t * 0.9);
+  drawFullImage(ctx, img, layout);
+  ctx.restore();
+}
+
 function pickMimeType(withAudio: boolean): string {
   const types = withAudio
     ? [
@@ -411,12 +431,17 @@ export async function generatePosterVideo(
   const sectionReveal = Math.max(0.2, options.sectionRevealSeconds ?? 0.6);
   const holdFull = Math.max(0, options.holdFullSeconds ?? 1);
   const scatterDur = Math.max(0.3, options.scatterSeconds ?? 2);
+  const endCardSeconds = Math.max(0, options.endCardSeconds ?? 0);
   const holdShakeIntensity =
     options.holdShakeIntensity === undefined
       ? 1
       : Math.max(0, Math.min(1.5, options.holdShakeIntensity));
 
   const img = await loadImage(source);
+  const endCardImg =
+    options.endCardSrc && endCardSeconds > 0
+      ? await loadImage(options.endCardSrc)
+      : null;
   const layout = computeImageLayout(
     img.naturalWidth,
     img.naturalHeight,
@@ -443,11 +468,14 @@ export async function generatePosterVideo(
   const sectionFrames = Math.max(1, Math.round(sectionReveal * fps));
   const holdFrames = Math.max(0, Math.round(holdFull * fps));
   const scatterFrames = Math.max(1, Math.round(scatterDur * fps));
+  const endCardFrames =
+    endCardImg && endCardSeconds > 0 ? Math.max(1, Math.round(endCardSeconds * fps)) : 0;
   const totalFrames =
     introFrames +
     sections.length * sectionFrames +
     holdFrames +
-    scatterFrames;
+    scatterFrames +
+    endCardFrames;
 
   const durationSeconds = totalFrames / fps;
 
@@ -540,7 +568,21 @@ export async function generatePosterVideo(
     } else {
       const local =
         frame - introFrames - sections.length * sectionFrames - holdFrames;
-      drawScatter(ctx, composite, outW, outH, particles, local / scatterFrames);
+      if (local < scatterFrames) {
+        drawScatter(ctx, composite, outW, outH, particles, local / scatterFrames);
+      } else if (endCardImg) {
+        const endLocal = local - scatterFrames;
+        drawEndCard(
+          ctx,
+          endCardImg,
+          outW,
+          outH,
+          endCardFrames > 0 ? endLocal / endCardFrames : 1
+        );
+      } else {
+        ctx.fillStyle = "#060d18";
+        ctx.fillRect(0, 0, outW, outH);
+      }
     }
 
     track.requestFrame?.();
