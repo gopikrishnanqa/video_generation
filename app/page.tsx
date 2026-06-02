@@ -38,7 +38,7 @@ type TimingState = {
 };
 
 const DEFAULT_TIMING: TimingState = {
-  introStyle: "blue",
+  introStyle: "blur",
   blueIntroSeconds: 1.5,
   sectionRevealSeconds: 0.3,
   holdFullSeconds: 6,
