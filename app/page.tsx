@@ -471,7 +471,16 @@ export default function Home() {
               End card image (after scatter)
               <select
                 value={selectedEndCardSrc}
-                onChange={(e) => setSelectedEndCardSrc(e.target.value)}
+                onChange={(e) => {
+                  const src = e.target.value;
+                  setSelectedEndCardSrc(src);
+                  if (src) {
+                    setTiming((t) => ({
+                      ...t,
+                      endCardSeconds: t.endCardSeconds > 0 ? t.endCardSeconds : 2,
+                    }));
+                  }
+                }}
                 style={styles.select}
               >
                 <option value="">None</option>
