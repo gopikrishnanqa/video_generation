@@ -116,6 +116,13 @@ function drawBlueOverlay(
   ctx.fillRect(0, 0, w, h);
 }
 
+/** Fade poster out near intro end so section reveal starts from masked state. */
+function introPosterFade(progress: number): number {
+  const t = easeOutCubic(progress);
+  if (t <= 0.55) return 1;
+  return 1 - easeOutCubic((t - 0.55) / 0.45);
+}
+
 /** Blue color wash — poster faint under strong blue overlay */
 function drawBlueIntro(
   ctx: CanvasRenderingContext2D,
@@ -126,20 +133,25 @@ function drawBlueIntro(
   progress: number
 ) {
   const t = easeOutCubic(progress);
+  const posterFade = introPosterFade(progress);
   ctx.fillStyle = "#060d18";
   ctx.fillRect(0, 0, cw, ch);
 
-  const blurPx = 6 * (1 - t);
-  ctx.save();
-  ctx.filter = blurPx > 0.5 ? `blur(${blurPx}px)` : "none";
-  ctx.globalAlpha = 0.22 + t * 0.28;
-  drawFullImage(ctx, img, layout);
-  ctx.restore();
+  const imageAlpha = (0.22 + t * 0.28) * posterFade;
+  if (imageAlpha > 0.02) {
+    const blurPx = 6 * (1 - t) * posterFade;
+    ctx.save();
+    ctx.filter = blurPx > 0.5 ? `blur(${blurPx}px)` : "none";
+    ctx.globalAlpha = imageAlpha;
+    drawFullImage(ctx, img, layout);
+    ctx.restore();
+  }
 
-  drawBlueOverlay(ctx, cw, ch, 0.92 - t * 0.25);
+  const blueAlpha = Math.min(0.95, 0.92 - t * 0.2 + (1 - posterFade) * 0.35);
+  drawBlueOverlay(ctx, cw, ch, blueAlpha);
 }
 
-/** Blur focus — poster visible but heavily blurred, minimal blue tint */
+/** Blur focus — poster stays blurred; never ends on a sharp full image */
 function drawBlurIntro(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
@@ -149,18 +161,23 @@ function drawBlurIntro(
   progress: number
 ) {
   const t = easeOutCubic(progress);
+  const posterFade = introPosterFade(progress);
   ctx.fillStyle = "#060d18";
   ctx.fillRect(0, 0, cw, ch);
 
-  const blurPx = 22 * (1 - t);
-  ctx.save();
-  ctx.filter = blurPx > 0.5 ? `blur(${blurPx}px)` : "none";
-  ctx.globalAlpha = 0.45 + t * 0.45;
-  drawFullImage(ctx, img, layout);
-  ctx.restore();
+  const imageAlpha = (0.4 + t * 0.35) * posterFade;
+  if (imageAlpha > 0.02) {
+    const blurPx = Math.max(8, 22 * posterFade);
+    ctx.save();
+    ctx.filter = `blur(${blurPx}px)`;
+    ctx.globalAlpha = imageAlpha;
+    drawFullImage(ctx, img, layout);
+    ctx.restore();
+  }
 
-  if (t < 0.85) {
-    drawBlueOverlay(ctx, cw, ch, 0.12 * (1 - t));
+  const blueAlpha = 0.1 * (1 - t) * posterFade + (1 - posterFade) * 0.9;
+  if (blueAlpha > 0.01) {
+    drawBlueOverlay(ctx, cw, ch, blueAlpha);
   }
 }
 
